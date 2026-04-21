@@ -110,7 +110,11 @@ export default function OverlayPage() {
         
         // Voice Selection
         const voices = window.speechSynthesis.getVoices();
-        let voice = voices.find(v => v.name.includes(voiceName));
+        let voice = voices.find(v => v.name === widget?.config.ttsVoice);
+        
+        if (!voice) {
+          voice = voices.find(v => v.name.includes(voiceName));
+        }
         
         if (!voice && hasDevanagari) {
           voice = voices.find(v => v.lang.startsWith('hi'));

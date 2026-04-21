@@ -17,25 +17,19 @@ const __dirname = path.dirname(__filename);
 // Initialize Firebase Admin for Token Verification
 if (!admin.apps.length) {
   try {
-    const configPath = path.join(__dirname, 'firebase-applet-config.json');
-    let localConfig: any = {};
-    try {
-      const fs = await import('fs');
-      localConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    } catch (e) {}
-
     if (process.env.FIREBASE_SERVICE_ACCOUNT) {
       const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
       admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount)
+        credential: admin.credential.cert(serviceAccount),
+        projectId: process.env.VITE_FIREBASE_PROJECT_ID || serviceAccount.project_id
       });
-      console.log("Firebase Admin initialized with Service Account. Project:", serviceAccount.project_id);
-    } else if (localConfig.projectId) {
-      // Use project ID from local config to ensure "aud" match
+      console.log("Firebase Admin initialized with Service Account. Service Account Project:", serviceAccount.project_id, "Actual Audience ID:", process.env.VITE_FIREBASE_PROJECT_ID || serviceAccount.project_id);
+    } else if (process.env.VITE_FIREBASE_PROJECT_ID) {
+      // Use project ID from env to ensure "aud" match
       admin.initializeApp({
-        projectId: localConfig.projectId
+        projectId: process.env.VITE_FIREBASE_PROJECT_ID
       });
-      console.log("Firebase Admin initialized with Project ID from local config:", localConfig.projectId);
+      console.log("Firebase Admin initialized with Project ID from env:", process.env.VITE_FIREBASE_PROJECT_ID);
     } else {
       admin.initializeApp();
       console.log("Firebase Admin initialized with default credentials.");
@@ -285,8 +279,18 @@ async function startServer() {
 
   // --- Donation Routes ---
   app.get('/api/donations', verifyAuth, asyncHandler(async (req: any, res: any) => {
-    const donations = await DonationModel.find({ streamerId: req.user.uid }).sort({ createdAt: -1 }).limit(50);
-    res.json(donations);
+    const donations = await DonationModel.find({ streamerId: req.user.uid }).sort({ createdAt: -1 }).limit(100);
+    
+    // Calculate total verified earnings for authenticity
+    const stats = await DonationModel.aggregate([
+      { $match: { streamerId: req.user.uid, status: 'verified' } },
+      { $group: { _id: null, total: { $sum: '$amount' } } }
+    ]);
+    
+    res.json({
+      donations,
+      totalEarnings: stats[0]?.total || 0
+    });
   }));
 
   app.patch('/api/donations/:id', verifyAuth, asyncHandler(async (req: any, res: any) => {

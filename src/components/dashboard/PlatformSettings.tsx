@@ -178,7 +178,9 @@ export default function PlatformSettings({ settings }: Props) {
 
          <div className="p-8 bg-orange-600/10 border border-orange-500/20 rounded-[2.5rem]">
             <div className="flex items-center gap-3 mb-4">
-               <div className="w-10 h-10 bg-orange-600 rounded-xl flex items-center justify-center font-black italic text-lg shadow-lg">B</div>
+               <div className="w-12 h-12 bg-orange-600 rounded-2xl flex items-center justify-center font-black italic text-2xl shadow-lg border-2 border-orange-500/30">
+                  <span className="leading-none pr-0.5">{formData.platformName?.charAt(0).toUpperCase()}</span>
+               </div>
                <div>
                   <p className="text-xs font-black uppercase tracking-widest text-orange-500">Live Preview</p>
                   <p className="text-lg font-bold">{formData.platformName}</p>

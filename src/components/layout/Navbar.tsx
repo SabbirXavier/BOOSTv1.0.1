@@ -44,8 +44,10 @@ export default function Navbar() {
     <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-black/60 backdrop-blur-xl">
       <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2 group">
-          <div className="w-8 h-8 bg-orange-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg shadow-orange-600/20">
-            <Zap size={18} className="text-white fill-white" />
+          <div className="w-9 h-9 bg-orange-600 rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform shadow-lg shadow-orange-600/20">
+             <span className="text-white font-black text-xl italic leading-none select-none pr-0.5">
+               {platformName.charAt(0).toUpperCase()}
+             </span>
           </div>
           <span className="font-bold text-xl tracking-tight bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent italic uppercase pr-1">
             {platformName}

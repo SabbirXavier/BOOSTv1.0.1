@@ -32,7 +32,7 @@ export default function WidgetCustomizer({ widget, onUpdate }: Props) {
   };
 
   const handleDelete = async () => {
-    if (!window.confirm("Are you sure you want to delete this widget?")) return;
+    // Avoid window.confirm in iframe environments
     setDeleting(true);
     try {
       await widgetApi.delete(widget.id);

@@ -37,6 +37,7 @@ export default function Dashboard() {
   const [streamer, setStreamer] = useState<Streamer | null>(null);
   const [widgets, setWidgets] = useState<Widget[]>([]);
   const [donations, setDonations] = useState<Donation[]>([]);
+  const [totalEarningStat, setTotalEarningStat] = useState(0);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [allStreamers, setAllStreamers] = useState<Streamer[]>([]);
@@ -57,9 +58,7 @@ export default function Dashboard() {
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
 
-  const totalEarnings = donations
-    .filter(d => d.status === 'verified')
-    .reduce((acc, d) => acc + (d.amount || 0), 0);
+  const totalEarningsDisplay = totalEarningStat || 0;
   const totalTipsCount = donations.filter(d => d.status === 'verified').length;
 
   const fetchDashboardData = async () => {
@@ -70,12 +69,13 @@ export default function Dashboard() {
       if (s) {
         setDisplayName(s.displayName);
         setUsername(s.username);
-        const [w, d] = await Promise.all([
+        const [w, dResponse] = await Promise.all([
           widgetApi.list(),
           donationApi.list()
         ]);
         setWidgets(w);
-        setDonations(d);
+        setDonations(dResponse.donations || []);
+        setTotalEarningStat(dResponse.totalEarnings || 0);
         
         if (s.role === 'admin') {
           const all = await adminApi.listStreamers();
@@ -232,6 +232,12 @@ export default function Dashboard() {
   };
 
   const handleAddWidget = async (type: 'alert' | 'goal' | 'ticker') => {
+    // Check for duplicates only for alert box
+    if (type === 'alert' && widgets.some(w => w.type === 'alert')) {
+      toast.error(`You already have an active alert box.`);
+      return;
+    }
+
     try {
       await widgetApi.create({
         type,
@@ -240,6 +246,7 @@ export default function Dashboard() {
                { minAmount: 1, ttsEnabled: true, primaryColor: '#ea580c', animationType: 'fade-up' }
       });
       fetchDashboardData();
+      toast.success(`${type.toUpperCase()} overlay added!`);
     } catch (err) {
       toast.error("Failed to add widget.");
     }
@@ -490,9 +497,10 @@ export default function Dashboard() {
           <motion.div key="overview" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
               <StatCard 
-                title="Earnings" 
-                value={`₹${totalEarnings.toLocaleString('en-IN')}`} 
+                title="Revenue" 
+                value={`₹${totalEarningsDisplay.toLocaleString('en-IN')}`} 
                 icon={<IndianRupee className="text-green-500" />} 
+                badge="LIFETIME"
               />
               <StatCard 
                 title="Total Tips" 
@@ -597,7 +605,7 @@ export default function Dashboard() {
                             </Link>
                          </div>
                        </div>
-                       <WidgetCustomizer widget={w} onUpdate={fetchDashboardData} />
+                       <WidgetCustomizer widget={w} onUpdate={fetchDashboardData} onDelete={fetchDashboardData} />
                     </div>
                   ))}
 
