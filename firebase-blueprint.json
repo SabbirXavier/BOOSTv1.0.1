@@ -1,0 +1,130 @@
+{
+  "entities": {
+    "Streamer": {
+      "title": "Streamer Profile",
+      "description": "Metadata and configuration for a streamer",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string" },
+        "username": { "type": "string" },
+        "bio": { "type": "string" },
+        "profileImage": { "type": "string" },
+        "gateways": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
+        "subscriptionActive": { "type": "boolean" },
+        "planId": { "type": "string" },
+        "obsToken": { "type": "string" },
+        "secrets": {
+          "type": "object",
+          "properties": {
+            "stripeSecretKey": { "type": "string" },
+            "razorpayKeySecret": { "type": "string" }
+          }
+        },
+        "isTrial": { "type": "boolean" },
+        "trialEndsAt": { "type": "string", "format": "date-time" },
+        "subscriptionExpiry": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["displayName", "username", "subscriptionActive", "planId"]
+    },
+    "Donation": {
+      "title": "Donation/Tip",
+      "description": "A tip sent from a viewer to a streamer",
+      "type": "object",
+      "properties": {
+        "streamerId": { "type": "string" },
+        "donorName": { "type": "string" },
+        "amount": { "type": "number" },
+        "currency": { "type": "string" },
+        "message": { "type": "string" },
+        "isTTSPlayed": { "type": "boolean" },
+        "gatewayUsed": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["streamerId", "donorName", "amount", "currency", "createdAt"]
+    },
+    "Widget": {
+      "title": "OBS Widget Configuration",
+      "description": "Settings for real-time overlays",
+      "type": "object",
+      "properties": {
+        "streamerId": { "type": "string" },
+        "type": { "type": "string", "enum": ["alert", "goal", "ticker"] },
+        "config": {
+          "type": "object",
+          "properties": {
+            "minAmount": { "type": "number" },
+            "ttsEnabled": { "type": "boolean" },
+            "primaryColor": { "type": "string" },
+            "animationType": { "type": "string" },
+            "goalAmount": { "type": "number" },
+            "goalTitle": { "type": "string" }
+          }
+        }
+      },
+      "required": ["streamerId", "type"]
+    },
+    "SystemSettings": {
+      "title": "Platform Settings",
+      "description": "Global configuration for the Boost platform",
+      "type": "object",
+      "properties": {
+        "platformName": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "allowedAdmins": { "type": "array", "items": { "type": "string" } },
+        "commissionRate": { "type": "number" },
+        "maintenanceMode": { "type": "boolean" },
+        "availableTTSVoices": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["platformName", "allowedAdmins", "availableTTSVoices"]
+    },
+    "SubscriptionPlan": {
+      "title": "Subscription Plan",
+      "description": "Definition of a subscription tier and its benefits",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "price": { "type": "number" },
+        "currency": { "type": "string" },
+        "trialDays": { "type": "number" },
+        "features": {
+          "type": "object",
+          "properties": {
+            "maxWidgets": { "type": "number" },
+            "customThemes": { "type": "boolean" },
+            "advancedAnalytics": { "type": "boolean" },
+            "prioritySupport": { "type": "boolean" },
+            "ttsVoices": { "type": "array", "items": { "type": "string" } },
+            "handlingFee": { "type": "number" }
+          }
+        }
+      },
+      "required": ["name", "price", "features", "trialDays"]
+    }
+  },
+  "firestore": {
+    "/plans/{planId}": {
+      "schema": "SubscriptionPlan",
+      "description": "List of available subscription tiers"
+    },
+    "/settings/platform": {
+      "schema": "SystemSettings",
+      "description": "Global settings for the platform"
+    },
+    "/streamers/{streamerId}": {
+      "schema": "Streamer",
+      "description": "Streamer metadata and settings"
+    },
+    "/donations/{donationId}": {
+      "schema": "Donation",
+      "description": "History of tips sent"
+    },
+    "/widgets/{widgetId}": {
+      "schema": "Widget",
+      "description": "Configuration for OBS browser sources"
+    }
+  }
+}
