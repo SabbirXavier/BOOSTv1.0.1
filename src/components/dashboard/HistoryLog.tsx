@@ -2,21 +2,23 @@ import React from 'react';
 import { toast } from 'sonner';
 import { Donation } from '../../types';
 import { IndianRupee, Clock, CheckCircle2, Search, Zap, AlertCircle, Check } from 'lucide-react';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { donationApi } from '../../lib/api';
 import { cn } from '../../lib/utils';
 
 interface Props {
   donations: Donation[];
+  onUpdate?: () => void;
 }
 
-export default function HistoryLog({ donations }: Props) {
+export default function HistoryLog({ donations, onUpdate }: Props) {
   const handleVerify = async (id: string) => {
     try {
-      await updateDoc(doc(db, 'donations', id), { status: 'verified' });
+      await donationApi.update(id, { status: 'verified' });
       toast.success("Tip verified! The alert and goal progress will now trigger.");
+      if (onUpdate) onUpdate();
     } catch (err) {
       console.error(err);
+      toast.error("Failed to verify tip.");
     }
   };
 
@@ -91,7 +93,7 @@ export default function HistoryLog({ donations }: Props) {
                 </td>
                 <td className="px-6 py-4 rounded-r-2xl">
                   <div className="flex items-center gap-1.5 text-neutral-500 text-[10px] font-mono">
-                    <Clock size={12} /> {d.createdAt?.toDate().toLocaleDateString()}
+                    <Clock size={12} /> {new Date(d.createdAt).toLocaleDateString()}
                   </div>
                 </td>
               </tr>

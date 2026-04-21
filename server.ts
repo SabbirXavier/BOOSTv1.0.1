@@ -156,6 +156,11 @@ const verifyAuth = async (req: any, res: any, next: any) => {
   }
 };
 
+// Error Handler Wrapper
+const asyncHandler = (fn: Function) => (req: any, res: any, next: any) => {
+  Promise.resolve(fn(req, res, next)).catch(next);
+};
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -175,182 +180,156 @@ async function startServer() {
   });
 
   // --- Streamer Routes ---
-  app.get('/api/streamers/:username', async (req, res) => {
-    try {
-      const streamer = await StreamerModel.findOne({ username: req.params.username.toLowerCase() });
-      if (!streamer) return res.status(404).json({ error: 'Streamer not found' });
-      res.json(streamer);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
+  app.get('/api/streamers/:username', asyncHandler(async (req: any, res: any) => {
+    const streamer = await StreamerModel.findOne({ username: req.params.username.toLowerCase() });
+    if (!streamer) return res.status(404).json({ error: 'Streamer not found' });
+    res.json(streamer);
+  }));
 
-  app.get('/api/me', verifyAuth, async (req: any, res) => {
-    try {
-      const streamer = await StreamerModel.findOne({ firebaseUid: req.user.uid });
-      res.json(streamer);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
+  app.get('/api/me', verifyAuth, asyncHandler(async (req: any, res: any) => {
+    const streamer = await StreamerModel.findOne({ firebaseUid: req.user.uid });
+    res.json(streamer);
+  }));
 
-  app.post('/api/me', verifyAuth, async (req: any, res) => {
-    try {
-      const existing = await StreamerModel.findOne({ firebaseUid: req.user.uid });
-      if (existing) return res.status(400).json({ error: 'Account already setup' });
+  app.post('/api/me', verifyAuth, asyncHandler(async (req: any, res: any) => {
+    const existing = await StreamerModel.findOne({ firebaseUid: req.user.uid });
+    if (existing) return res.status(400).json({ error: 'Account already setup' });
 
-      // Check username uniqueness
-      const usernameTaken = await StreamerModel.findOne({ username: req.body.username.toLowerCase() });
-      if (usernameTaken) return res.status(400).json({ error: 'Username already taken' });
+    // Check username uniqueness
+    const usernameTaken = await StreamerModel.findOne({ username: req.body.username.toLowerCase() });
+    if (usernameTaken) return res.status(400).json({ error: 'Username already taken' });
 
-      const newStreamer = new StreamerModel({
-        ...req.body,
-        firebaseUid: req.user.uid,
-        username: req.body.username.toLowerCase()
-      });
-      await newStreamer.save();
-      res.status(201).json(newStreamer);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
+    const newStreamer = new StreamerModel({
+      ...req.body,
+      firebaseUid: req.user.uid,
+      username: req.body.username.toLowerCase()
+    });
+    await newStreamer.save();
+    res.status(201).json(newStreamer);
+  }));
 
-  app.patch('/api/me', verifyAuth, async (req: any, res) => {
-    try {
-      const updated = await StreamerModel.findOneAndUpdate(
-        { firebaseUid: req.user.uid },
-        { $set: req.body },
-        { new: true }
-      );
-      res.json(updated);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
+  app.patch('/api/me', verifyAuth, asyncHandler(async (req: any, res: any) => {
+    const updated = await StreamerModel.findOneAndUpdate(
+      { firebaseUid: req.user.uid },
+      { $set: req.body },
+      { new: true }
+    );
+    res.json(updated);
+  }));
 
-  app.delete('/api/me', verifyAuth, async (req: any, res) => {
-    try {
-      await StreamerModel.deleteOne({ firebaseUid: req.user.uid });
-      await WidgetModel.deleteMany({ streamerId: req.user.uid });
-      res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
+  app.delete('/api/me', verifyAuth, asyncHandler(async (req: any, res: any) => {
+    await StreamerModel.deleteOne({ firebaseUid: req.user.uid });
+    await WidgetModel.deleteMany({ streamerId: req.user.uid });
+    res.json({ success: true });
+  }));
 
   // --- Widget Routes ---
-  app.get('/api/widgets', verifyAuth, async (req: any, res) => {
+  app.get('/api/widgets', verifyAuth, asyncHandler(async (req: any, res: any) => {
     const widgets = await WidgetModel.find({ streamerId: req.user.uid });
     res.json(widgets);
-  });
+  }));
 
-  app.post('/api/widgets', verifyAuth, async (req: any, res) => {
+  app.post('/api/widgets', verifyAuth, asyncHandler(async (req: any, res: any) => {
     const widget = new WidgetModel({ ...req.body, streamerId: req.user.uid });
     await widget.save();
     res.json(widget);
-  });
+  }));
 
-  app.patch('/api/widgets/:id', verifyAuth, async (req: any, res) => {
+  app.patch('/api/widgets/:id', verifyAuth, asyncHandler(async (req: any, res: any) => {
     const updated = await WidgetModel.findOneAndUpdate(
       { _id: req.params.id, streamerId: req.user.uid },
       { $set: req.body },
       { new: true }
     );
     res.json(updated);
-  });
+  }));
 
   // --- Donation Routes ---
-  app.get('/api/donations', verifyAuth, async (req: any, res) => {
+  app.get('/api/donations', verifyAuth, asyncHandler(async (req: any, res: any) => {
     const donations = await DonationModel.find({ streamerId: req.user.uid }).sort({ createdAt: -1 }).limit(50);
     res.json(donations);
-  });
+  }));
+
+  app.patch('/api/donations/:id', verifyAuth, asyncHandler(async (req: any, res: any) => {
+    const donation = await DonationModel.findOneAndUpdate(
+      { _id: req.params.id, streamerId: req.user.uid },
+      { $set: req.body },
+      { new: true }
+    );
+    res.json(donation);
+  }));
 
   // --- Payment Routes ---
-  app.post('/api/payment/razorpay/order', async (req, res) => {
-    const { streamerId, amount, currency } = req.body; // streamerId here is the firebaseUid or mongo _id? Let's use firebaseUid for consistency
+  app.post('/api/payment/razorpay/order', asyncHandler(async (req: any, res: any) => {
+    const { streamerId, amount, currency } = req.body; 
     if (!streamerId || !amount) return res.status(400).json({ error: 'Missing fields' });
 
-    try {
-      const streamer = await StreamerModel.findOne({ firebaseUid: streamerId });
-      if (!streamer) return res.status(404).json({ error: 'Streamer not found' });
-      
-      const razorpayGateway = streamer.gateways?.find((g: any) => g.type === 'razorpay');
-      if (!razorpayGateway) return res.status(400).json({ error: 'Razorpay not configured' });
-      
-      const keyId = razorpayGateway.config.razorpayKeyId;
-      const keySecret = streamer.secrets?.razorpayKeySecret;
-      
-      if (!keyId || !keySecret) return res.status(400).json({ error: 'Keys missing' });
+    const streamer = await StreamerModel.findOne({ firebaseUid: streamerId });
+    if (!streamer) return res.status(404).json({ error: 'Streamer not found' });
+    
+    const razorpayGateway = streamer.gateways?.find((g: any) => g.type === 'razorpay');
+    if (!razorpayGateway) return res.status(400).json({ error: 'Razorpay not configured' });
+    
+    const keyId = razorpayGateway.config.razorpayKeyId;
+    const keySecret = streamer.secrets?.razorpayKeySecret;
+    
+    if (!keyId || !keySecret) return res.status(400).json({ error: 'Keys missing' });
 
-      const razorpay = new Razorpay({ key_id: keyId, key_secret: keySecret });
-      const order = await razorpay.orders.create({
-        amount: Math.round(amount * 100),
-        currency: currency === '₹' ? 'INR' : (currency || 'INR'),
-        receipt: `rcpt_${Date.now()}`
-      });
-      
-      res.json({ orderId: order.id, keyId, amount: order.amount, currency: order.currency });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
+    const razorpay = new Razorpay({ key_id: keyId, key_secret: keySecret });
+    const order = await razorpay.orders.create({
+      amount: Math.round(amount * 100),
+      currency: currency === '₹' ? 'INR' : (currency || 'INR'),
+      receipt: `rcpt_${Date.now()}`
+    });
+    
+    res.json({ orderId: order.id, keyId, amount: order.amount, currency: order.currency });
+  }));
 
-  app.post('/api/payment/success', async (req, res) => {
-    // Record the donation in MongoDB
-    try {
-      const donation = new DonationModel(req.body);
-      await donation.save();
-      res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
+  app.post('/api/payment/success', asyncHandler(async (req: any, res: any) => {
+    const donation = new DonationModel(req.body);
+    await donation.save();
+    res.json({ success: true });
+  }));
 
-  app.post('/api/tts', async (req, res) => {
+  app.post('/api/tts', asyncHandler(async (req: any, res: any) => {
     const { text, voiceName } = req.body;
     if (!text) return res.status(400).json({ error: 'Text required' });
     
-    try {
-      const { GoogleGenAI, Modality } = await import("@google/genai");
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-      
-      const response = await ai.models.generateContent({
-        model: "gemini-1.5-flash", // Using a stable model for TTS if preview is flaky
-        contents: [{ parts: [{ text: `Generate spoken audio for this message: ${text}` }] }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: voiceName || 'Zephyr' },
-            },
+    const { GoogleGenAI, Modality } = await import("@google/genai");
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+    
+    const response = await ai.models.generateContent({
+      model: "gemini-1.5-flash",
+      contents: [{ parts: [{ text: `Generate spoken audio for this message: ${text}` }] }],
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: voiceName || 'Zephyr' },
           },
         },
-      });
+      },
+    });
 
-      const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      res.json({ audioData });
-    } catch (err: any) {
-      console.error("TTS Error:", err);
-      res.status(500).json({ error: err.message });
-    }
-  });
+    const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    res.json({ audioData });
+  }));
 
   // --- Admin Routes ---
-  app.get('/api/admin/streamers', verifyAuth, async (req: any, res) => {
-    // Check if requester is admin
+  app.get('/api/admin/streamers', verifyAuth, asyncHandler(async (req: any, res: any) => {
     const requester = await StreamerModel.findOne({ firebaseUid: req.user.uid });
     if (requester?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
 
     const all = await StreamerModel.find({});
     res.json(all);
-  });
+  }));
 
-  app.get('/api/admin/settings', async (req, res) => {
+  app.get('/api/admin/settings', asyncHandler(async (req: any, res: any) => {
     const settings = await SettingsModel.findOne({ key: 'platform' });
     res.json(settings?.value || {});
-  });
+  }));
 
-  app.patch('/api/admin/settings', verifyAuth, async (req: any, res) => {
+  app.patch('/api/admin/settings', verifyAuth, asyncHandler(async (req: any, res: any) => {
     const requester = await StreamerModel.findOne({ firebaseUid: req.user.uid });
     if (requester?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
 
@@ -360,36 +339,70 @@ async function startServer() {
       { new: true, upsert: true }
     );
     res.json(updated.value);
-  });
+  }));
 
-  app.get('/api/admin/plans', async (req, res) => {
+  app.get('/api/admin/plans', asyncHandler(async (req: any, res: any) => {
     const plans = await PlanModel.find({});
     res.json(plans);
-  });
+  }));
 
-  app.post('/api/admin/plans', verifyAuth, async (req: any, res) => {
+  app.post('/api/admin/plans', verifyAuth, asyncHandler(async (req: any, res: any) => {
     const requester = await StreamerModel.findOne({ firebaseUid: req.user.uid });
     if (requester?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
 
     const plan = new PlanModel(req.body);
     await plan.save();
     res.status(201).json(plan);
-  });
+  }));
 
-  app.patch('/api/admin/plans/:id', verifyAuth, async (req: any, res) => {
+  app.patch('/api/admin/plans/:id', verifyAuth, asyncHandler(async (req: any, res: any) => {
     const requester = await StreamerModel.findOne({ firebaseUid: req.user.uid });
     if (requester?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
 
     const updated = await PlanModel.findByIdAndUpdate(req.params.id, { $set: req.body }, { new: true });
     res.json(updated);
-  });
+  }));
 
-  app.delete('/api/admin/plans/:id', verifyAuth, async (req: any, res) => {
+  app.delete('/api/admin/plans/:id', verifyAuth, asyncHandler(async (req: any, res: any) => {
     const requester = await StreamerModel.findOne({ firebaseUid: req.user.uid });
     if (requester?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
 
     await PlanModel.findByIdAndDelete(req.params.id);
     res.json({ success: true });
+  }));
+
+  // --- Overlay Routes (Public) ---
+  app.get('/api/public/widgets/:id', asyncHandler(async (req: any, res: any) => {
+    const widget = await WidgetModel.findById(req.params.id);
+    if (!widget) return res.status(404).json({ error: 'Widget not found' });
+    res.json(widget);
+  }));
+
+  app.get('/api/public/overlays/:widgetId/donations', asyncHandler(async (req: any, res: any) => {
+    const widget = await WidgetModel.findById(req.params.widgetId);
+    if (!widget) return res.status(404).json({ error: 'Widget not found' });
+
+    const { since } = req.query;
+    const queryCond: any = { 
+      streamerId: widget.streamerId,
+      status: 'verified'
+    };
+    
+    if (since) {
+      queryCond.createdAt = { $gt: new Date(since as string) };
+    }
+
+    const donations = await DonationModel.find(queryCond).sort({ createdAt: 1 });
+    res.json(donations);
+  }));
+
+  // Generic Global Error Handler
+  app.use((err: any, req: any, res: any, next: any) => {
+    console.error("API Global Error:", err);
+    res.status(err.status || 500).json({
+      error: err.message || 'Internal Server Error',
+      code: err.name || 'API_ERROR'
+    });
   });
 
   // --- Twitch Auth ---

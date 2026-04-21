@@ -9,7 +9,7 @@ import {
   Palette, Play, Zap
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { db, auth, googleProvider, RecaptchaVerifier, signInWithPhoneNumber } from '../lib/firebase';
+import { auth, googleProvider, RecaptchaVerifier, signInWithPhoneNumber } from '../lib/firebase';
 import { streamerApi, widgetApi, donationApi, adminApi } from '../lib/api';
 import { 
   signInWithPopup, 
@@ -503,7 +503,7 @@ export default function Dashboard() {
               </h2>
               <div className="space-y-4">
                 {donations.length === 0 && <div className="text-center py-20 text-neutral-600 italic">No donations received at this moment.</div>}
-                {donations.map(donation => (
+                {Array.isArray(donations) && donations.map(donation => (
                   <div key={donation.id} className="flex items-center justify-between p-5 rounded-2xl bg-neutral-950/50 border border-white/5 hover:border-white/10 transition-all hover:bg-neutral-950">
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 rounded-xl bg-orange-600/10 text-orange-500 flex items-center justify-center font-bold text-xl uppercase italic border border-orange-500/20">

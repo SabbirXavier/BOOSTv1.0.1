@@ -30,6 +30,7 @@ export const widgetApi = {
 
 export const donationApi = {
   list: () => api.get('/donations').then(res => res.data),
+  update: (id: string, data: any) => api.patch(`/donations/${id}`, data).then(res => res.data),
   createOrder: (data: any) => api.post('/payment/razorpay/order', data).then(res => res.data),
   recordSuccess: (data: any) => api.post('/payment/success', data).then(res => res.data),
 };

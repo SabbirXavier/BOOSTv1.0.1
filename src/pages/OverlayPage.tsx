@@ -2,15 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
-import { db } from '../lib/firebase';
-import { 
-  doc, onSnapshot, collection, query, 
-  where, orderBy, limit, updateDoc,
-  Timestamp 
-} from 'firebase/firestore';
 import { Donation, Widget } from '../types';
 import { generateTTS } from '../lib/gemini';
 import { IndianRupee } from 'lucide-react';
+import axios from 'axios';
 
 export default function OverlayPage() {
   const { widgetId } = useParams();
@@ -18,43 +13,50 @@ export default function OverlayPage() {
   const [currentAlert, setCurrentAlert] = useState<Donation | null>(null);
   const [queue, setQueue] = useState<Donation[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [goalTotal, setGoalTotal] = useState(0);
+  const [recentDonations, setRecentDonations] = useState<Donation[]>([]);
   
-  const startTime = useRef(Timestamp.now());
+  const lastCheckTime = useRef(new Date().toISOString());
 
   // 1. Fetch Widget Config
   useEffect(() => {
     if (!widgetId) return;
-    const unsub = onSnapshot(doc(db, 'widgets', widgetId), (docSnap) => {
-      if (docSnap.exists()) {
-        setWidget({ id: docSnap.id, ...docSnap.data() } as Widget);
+    const fetchWidget = async () => {
+      try {
+        const res = await axios.get(`/api/public/widgets/${widgetId}`);
+        setWidget(res.data);
+      } catch (err) {
+        console.error("Widget fetch failed:", err);
       }
-    });
-    return unsub;
+    };
+    fetchWidget();
   }, [widgetId]);
 
-  // 2. Listen for New Donations
+  // 2. Poll for New Donations (Alerts)
   useEffect(() => {
-    if (!widget) return;
+    if (!widgetId || !widget) return;
 
-    const dq = query(
-      collection(db, 'donations'),
-      where('streamerId', '==', widget.streamerId),
-      where('status', '==', 'verified'),
-      where('createdAt', '>', startTime.current),
-      orderBy('createdAt', 'asc')
-    );
-
-    const unsub = onSnapshot(dq, (snap) => {
-      snap.docChanges().forEach((change) => {
-        if (change.type === 'added') {
-          const donation = { id: change.doc.id, ...change.doc.data() } as Donation;
-          setQueue(prev => [...prev, donation]);
+    const pollDonations = async () => {
+      try {
+        const res = await axios.get(`/api/public/overlays/${widgetId}/donations`, {
+          params: { since: lastCheckTime.current }
+        });
+        
+        const newDonations = res.data as Donation[];
+        if (Array.isArray(newDonations) && newDonations.length > 0) {
+          setQueue(prev => [...prev, ...newDonations]);
+          // Set last check time to the latest donation time or now
+          lastCheckTime.current = new Date().toISOString();
         }
-      });
-    });
+      } catch (err) {
+        console.error("Polling failed:", err);
+      }
+    };
 
-    return unsub;
-  }, [widget]);
+    const interval = setInterval(pollDonations, 5000); 
+    pollDonations(); // Initial check
+    return () => clearInterval(interval);
+  }, [widgetId, widget]);
 
   // 3. Process Queue
   useEffect(() => {
@@ -102,36 +104,31 @@ export default function OverlayPage() {
     });
   };
 
-  const [recentDonations, setRecentDonations] = useState<Donation[]>([]);
-  const [goalTotal, setGoalTotal] = useState(0);
-
+  // 4. Poll for Goal/Ticker status
   useEffect(() => {
-    if (!widget) return;
+    if (!widgetId || !widget) return;
+    if (widget.type === 'alert') return;
 
-    if (widget.type === 'ticker') {
-      const q = query(
-        collection(db, 'donations'), 
-        where('streamerId', '==', widget.streamerId),
-        orderBy('createdAt', 'desc'),
-        limit(10)
-      );
-      return onSnapshot(q, (snap) => {
-        setRecentDonations(snap.docs.map(d => ({ id: d.id, ...d.data() } as Donation)));
-      });
-    }
+    const fetchStatus = async () => {
+      try {
+        const res = await axios.get(`/api/public/overlays/${widgetId}/donations`);
+        const allDonations = res.data as Donation[];
+        
+        if (widget.type === 'goal') {
+          const total = allDonations.reduce((acc, d) => acc + (d.amount || 0), 0);
+          setGoalTotal(total);
+        } else if (widget.type === 'ticker') {
+          setRecentDonations(allDonations.slice(-10).reverse());
+        }
+      } catch (err) {
+        console.error("Status fetch failed:", err);
+      }
+    };
 
-    if (widget.type === 'goal') {
-      const q = query(
-        collection(db, 'donations'),
-        where('streamerId', '==', widget.streamerId),
-        where('status', '==', 'verified')
-      );
-      return onSnapshot(q, (snap) => {
-        const total = snap.docs.reduce((acc, doc) => acc + (doc.data().amount || 0), 0);
-        setGoalTotal(total);
-      });
-    }
-  }, [widget]);
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 30000); // Status updates slower (30s)
+    return () => clearInterval(interval);
+  }, [widgetId, widget]);
 
   if (!widget) return null;
 
