@@ -17,11 +17,28 @@ const __dirname = path.dirname(__filename);
 // Initialize Firebase Admin for Token Verification
 if (!admin.apps.length) {
   try {
+    const configPath = path.join(__dirname, 'firebase-applet-config.json');
+    let localConfig: any = {};
+    try {
+      const fs = await import('fs');
+      localConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    } catch (e) {}
+
     if (process.env.FIREBASE_SERVICE_ACCOUNT) {
       const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-      admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+      });
+      console.log("Firebase Admin initialized with Service Account. Project:", serviceAccount.project_id);
+    } else if (localConfig.projectId) {
+      // Use project ID from local config to ensure "aud" match
+      admin.initializeApp({
+        projectId: localConfig.projectId
+      });
+      console.log("Firebase Admin initialized with Project ID from local config:", localConfig.projectId);
     } else {
       admin.initializeApp();
+      console.log("Firebase Admin initialized with default credentials.");
     }
   } catch (err) {
     console.error("Firebase Admin Init Error:", err);
@@ -29,17 +46,32 @@ if (!admin.apps.length) {
 }
 
 // MongoDB Connection
-const MONGODB_URI = process.env.MONGODB_URI || '';
-mongoose.set('bufferCommands', false); // Disable buffering to prevent hanging on bad connections
+let MONGODB_URI = process.env.MONGODB_URI || '';
+mongoose.set('bufferCommands', false); 
 
 if (MONGODB_URI) {
+  // AUTO-FIX: If password contains unencoded '@', sanitize it.
+  // Pattern: mongodb+srv://user:pass@word@cluster...
+  if (MONGODB_URI.startsWith('mongodb') && MONGODB_URI.split('@').length > 2) {
+    const parts = MONGODB_URI.split('@');
+    const clusterPart = parts.pop(); // The cluster and query params
+    const authPart = parts.join('%40'); // Replace intermediate @ with encoded %40
+    MONGODB_URI = `${authPart}@${clusterPart}`;
+    console.log("MONGODB_URI: Automatically sanitized URI to handle special characters in password.");
+  }
+
   mongoose.connect(MONGODB_URI, { 
-    serverSelectionTimeoutMS: 5000 // Fast fail if DB unreachable
+    serverSelectionTimeoutMS: 5000 
   })
     .then(() => console.log("Connected to MongoDB Core Engine"))
-    .catch(err => console.error("MongoDB Connection Error:", err));
+    .catch(err => {
+      console.error("MongoDB Connection Error:", err);
+      if (err.message.includes('Authentication failed') || err.message.includes('auth failed')) {
+        console.error("HINT: Database authentication failed. Check your password. If it has '@', ensure it matches the portal exactly.");
+      }
+    });
 } else {
-  console.warn("MONGODB_URI is not defined. Database operations will fail immediately (buffering disabled).");
+  console.warn("MONGODB_URI is not defined. Database operations will fail immediately.");
 }
 
 // MongoDB Schemas
@@ -145,14 +177,18 @@ const PlanModel = mongoose.model('Plan', planSchema);
 // Middleware: Verify Firebase Auth Token
 const verifyAuth = async (req: any, res: any, next: any) => {
   const token = req.headers.authorization?.split('Bearer ')[1];
-  if (!token) return res.status(401).json({ error: 'Unauthorized: No token provided' });
+  if (!token) {
+    console.warn("[Auth] No token provided in request header.");
+    return res.status(401).json({ error: 'Unauthorized: No token provided' });
+  }
 
   try {
     const decodedToken = await admin.auth().verifyIdToken(token);
     req.user = decodedToken;
     next();
-  } catch (error) {
-    res.status(401).json({ error: 'Unauthorized: Invalid token' });
+  } catch (error: any) {
+    console.error("[Auth] Token verification failed:", error.message);
+    res.status(401).json({ error: `Unauthorized: ${error.message}` });
   }
 };
 
