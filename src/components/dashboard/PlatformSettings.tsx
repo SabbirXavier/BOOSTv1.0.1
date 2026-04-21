@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { toast } from 'sonner';
-import { db } from '../../lib/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { adminApi } from '../../lib/api';
 import { SystemSettings } from '../../types';
 import { Save, Plus, X, Shield, Globe, Volume2, Mic } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -26,11 +25,11 @@ export default function PlatformSettings({ settings }: Props) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await updateDoc(doc(db, 'settings', 'platform'), formData);
+      await adminApi.updateSettings(formData);
       toast.success("Platform settings updated successfully!");
     } catch (err) {
       console.error(err);
-      toast.error("Failed to update settings. Check console for details.");
+      toast.error("Failed to update settings.");
     }
     setSaving(false);
   };

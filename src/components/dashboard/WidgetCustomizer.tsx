@@ -2,8 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Palette, Play, Save, Info, AlertCircle, Volume2, Mic, Headphones, IndianRupee } from 'lucide-react';
 import { Widget } from '../../types';
-import { db } from '../../lib/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { widgetApi } from '../../lib/api';
 import { cn } from '../../lib/utils';
 import { generateTTS } from '../../lib/gemini';
 
@@ -20,7 +19,7 @@ export default function WidgetCustomizer({ widget }: Props) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await updateDoc(doc(db, 'widgets', widget.id), { config });
+      await widgetApi.update(widget.id, config);
     } catch (err) {
       console.error(err);
     }

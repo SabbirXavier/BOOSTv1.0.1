@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { Streamer } from '../../types';
-import { db } from '../../lib/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
-import { Palette, User, Image as ImageIcon, Save, Check } from 'lucide-react';
+import { streamerApi } from '../../lib/api';
+import { Palette, User, Image as ImageIcon, Save, Check, Trash2, AlertTriangle } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { toast } from 'sonner';
 
 interface Props {
   streamer: Streamer;
@@ -20,18 +20,36 @@ export default function BrandingManager({ streamer }: Props) {
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const handleSave = async () => {
     setSaving(true);
     setSaved(false);
     try {
-      await updateDoc(doc(db, 'streamers', streamer.id), formData);
+      await streamerApi.update(formData);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
+      toast.success("Branding updated!");
     } catch (err) {
       console.error(err);
+      toast.error("Failed to save branding.");
     }
     setSaving(false);
+  };
+
+  const handleDeleteAccount = async () => {
+    setDeleting(true);
+    try {
+      await streamerApi.delete();
+      toast.success("Account deleted successfully.");
+      window.location.reload(); 
+    } catch (err: any) {
+      console.error(err);
+      toast.error(`Deletion failed: ${err.message}`);
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
   };
 
   return (
@@ -102,6 +120,42 @@ export default function BrandingManager({ streamer }: Props) {
         >
           {saving ? 'Synchronizing...' : saved ? <><Check size={18} /> Profile Updated</> : <><Save size={18} /> Save Branding</>}
         </button>
+
+        <div className="pt-8 border-t border-white/5">
+          <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-6">
+            <h4 className="text-sm font-bold text-red-500 flex items-center gap-2 mb-2">
+              <AlertTriangle size={16} /> Danger Zone
+            </h4>
+            <p className="text-xs text-neutral-500 mb-4">
+              Deleting your account will remove your tipping page and reset all settings. This action cannot be undone.
+            </p>
+            
+            {showDeleteConfirm ? (
+              <div className="flex gap-3">
+                <button 
+                  onClick={handleDeleteAccount}
+                  disabled={deleting}
+                  className="flex-1 py-3 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold transition-all"
+                >
+                  {deleting ? 'Deleting...' : 'Confirm Delete'}
+                </button>
+                <button 
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-neutral-400 rounded-xl text-xs font-bold transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button 
+                onClick={() => setShowDeleteConfirm(true)}
+                className="w-full py-3 bg-red-600/10 hover:bg-red-600/20 text-red-500 border border-red-500/20 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
+              >
+                <Trash2 size={14} /> Delete Account
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Preview Section */}

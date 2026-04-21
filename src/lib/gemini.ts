@@ -1,26 +1,12 @@
-import { GoogleGenAI, Modality } from "@google/genai";
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+import api from "./api";
 
 /**
- * Generates audio for a tip message using Gemini TTS
+ * Generates audio for a tip message using the backend TTS proxy
  */
 export async function generateTTS(text: string, voiceName: string = 'Zephyr'): Promise<string | undefined> {
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3.1-flash-tts-preview",
-      contents: [{ parts: [{ text: `Say this tip message clearly: ${text}` }] }],
-      config: {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: voiceName as any },
-          },
-        },
-      },
-    });
-
-    return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    const response = await api.post('/tts', { text, voiceName });
+    return response.data.audioData;
   } catch (error) {
     console.error("TTS generation failed:", error);
     return undefined;

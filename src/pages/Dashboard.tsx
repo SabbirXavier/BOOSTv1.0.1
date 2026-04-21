@@ -9,13 +9,16 @@ import {
   Palette, Play, Zap
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { db, auth } from '../lib/firebase';
+import { db, auth, googleProvider, RecaptchaVerifier, signInWithPhoneNumber } from '../lib/firebase';
+import { streamerApi, widgetApi, donationApi, adminApi } from '../lib/api';
 import { 
-  collection, query, where, getDocs, 
-  doc, setDoc, onSnapshot, orderBy, limit,
-  serverTimestamp, updateDoc, addDoc
-} from 'firebase/firestore';
-import { onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithCustomToken } from 'firebase/auth';
+  signInWithPopup, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword,
+  onAuthStateChanged, 
+  signInWithCustomToken,
+  signOut
+} from 'firebase/auth';
 import { Streamer, Donation, Widget, PaymentGateway, SystemSettings, SubscriptionPlan } from '../types';
 import { cn } from '../lib/utils';
 import GatewayManager from '../components/dashboard/GatewayManager';
@@ -39,149 +42,116 @@ export default function Dashboard() {
   const [allStreamers, setAllStreamers] = useState<Streamer[]>([]);
   const [systemSettings, setSystemSettings] = useState<SystemSettings | null>(null);
   const [availablePlans, setAvailablePlans] = useState<SubscriptionPlan[]>([]);
+  const [dbStatus, setDbStatus] = useState<'checking' | 'connected' | 'disconnected'>('checking');
 
-  // Form states
+  // Auth Form states
+  const [authMode, setAuthMode] = useState<'options' | 'email' | 'phone'>('options');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [confirmationResult, setConfirmationResult] = useState<any>(null);
+
+  // Setup Form states
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
 
-  useEffect(() => {
-    // Global Platform Settings Listener
-    const settingsRef = doc(db, 'settings', 'platform');
-    const unsubSettings = onSnapshot(settingsRef, (snap) => {
-       if (snap.exists()) {
-         setSystemSettings({ id: snap.id, ...snap.data() } as SystemSettings);
-       } else {
-         // Initialize default settings with current user as admin
-         const defaultAdmins = ['nemesis.developers.org@gmail.com', 'dcpromoidse@gmail.com'];
-         setDoc(settingsRef, {
-           platformName: 'StreamVibe',
-           logoUrl: '',
-           allowedAdmins: defaultAdmins,
-           commissionRate: 0,
-           maintenanceMode: false,
-           availableTTSVoices: ['Aditi', 'Raveena', 'Matthew', 'Joey', 'Zephyr']
-         });
-       }
-    }, (err) => console.error("Platform Settings Snapshot Error:", err));
-
-    const unsubPlans = onSnapshot(collection(db, 'plans'), (snap) => {
-      if (snap.empty) {
-        // Initialize default plans
-        const defaultPlans = [
-          {
-            name: 'Standard',
-            price: 0,
-            currency: '₹',
-            trialDays: 14,
-            features: {
-              maxWidgets: 2,
-              customThemes: false,
-              advancedAnalytics: false,
-              prioritySupport: false,
-              ttsVoices: ['Aditi', 'Matthew'],
-              handlingFee: 0
-            }
-          },
-          {
-            name: 'Pro Streamer',
-            price: 499,
-            currency: '₹',
-            trialDays: 0,
-            features: {
-              maxWidgets: 10,
-              customThemes: true,
-              advancedAnalytics: true,
-              prioritySupport: true,
-              ttsVoices: ['Aditi', 'Raveena', 'Matthew', 'Joey', 'Zephyr'],
-              handlingFee: 0
-            }
-          }
-        ];
-        defaultPlans.forEach(plan => {
-          addDoc(collection(db, 'plans'), plan);
-        });
-      } else {
-        setAvailablePlans(snap.docs.map(d => ({ id: d.id, ...d.data() } as SubscriptionPlan)));
+  const fetchDashboardData = async () => {
+    try {
+      const s = await streamerApi.getMe();
+      setStreamer(s);
+      
+      if (s) {
+        setDisplayName(s.displayName);
+        setUsername(s.username);
+        const [w, d] = await Promise.all([
+          widgetApi.list(),
+          donationApi.list()
+        ]);
+        setWidgets(w);
+        setDonations(d);
+        
+        if (s.role === 'admin') {
+          const all = await adminApi.listStreamers();
+          setAllStreamers(all);
+        }
       }
-    }, (err) => console.error("Plans Snapshot Error:", err));
+    } catch (err: any) {
+      console.error("Fetch Data Error:", err);
+      if (err.response?.status === 404) {
+        setStreamer(null); // Force setup
+      }
+    }
+  };
 
-    const unsubAuth = onAuthStateChanged(auth, async (u) => {
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const settings = await adminApi.getSettings();
+        setSystemSettings(settings);
+        setDbStatus('connected');
+      } catch (err) {
+        setDbStatus('disconnected');
+      }
+    };
+    init();
+
+    const unsubAuth = onAuthStateChanged(auth, (u) => {
       setUser(u);
       if (u) {
-        const streamRef = doc(db, 'streamers', u.uid);
-        onSnapshot(streamRef, (snapshot) => {
-          if (snapshot.exists()) {
-            const data = { id: snapshot.id, ...snapshot.data() } as Streamer;
-            setStreamer(data);
-            
-            const envAdmins = (import.meta.env.VITE_PLATFORM_ADMINS || '').split(',').map((e: string) => e.trim());
-            const isSystemAdmin = u.email === 'dcpromoidse@gmail.com' || 
-                                 systemSettings?.allowedAdmins.includes(u.email || '') ||
-                                 envAdmins.includes(u.email || '');
-            
-            if (isSystemAdmin) {
-              getDocs(collection(db, 'streamers')).then(snap => {
-                setAllStreamers(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Streamer)));
-              }).catch(err => console.error("Admin Streamers Fetch Error:", err));
-            }
-          }
-        }, (err) => console.error("Streamer Private Snapshot Error:", err));
-
-        const wq = query(collection(db, 'widgets'), where('streamerId', '==', u.uid));
-        onSnapshot(wq, (snap) => {
-          setWidgets(snap.docs.map(d => ({ id: d.id, ...d.data() } as Widget)));
-        }, (err) => console.error("Widgets Snapshot Error:", err));
-
-        const dq = query(
-          collection(db, 'donations'), 
-          where('streamerId', '==', u.uid),
-          orderBy('createdAt', 'desc'),
-          limit(20)
-        );
-        onSnapshot(dq, (snap) => {
-          setDonations(snap.docs.map(d => ({ id: d.id, ...d.data() } as Donation)));
-        }, (err) => console.error("Donations Snapshot Error:", err));
+        fetchDashboardData();
       }
       setLoading(false);
     });
 
-    const handleOAuthMessage = async (event: MessageEvent) => {
-      if (event.data?.type === 'OAUTH_AUTH_SUCCESS' && event.data.provider === 'twitch') {
-        const { token, user: twitchUser } = event.data;
-        if (token) {
-          try {
-            await signInWithCustomToken(auth, token);
-          } catch (err) {
-            console.error("Twitch Sign-in Error:", err);
-          }
-        } else {
-          // If no admin token, at least we have the twitch info
-          console.log("Twitch User Data (Manual Link Required):", twitchUser);
-          toast.info("Twitch account identified. Please sign in with Google to link it, or contact admin to enable Twitch login.");
-        }
-      }
-    };
-    window.addEventListener('message', handleOAuthMessage);
+    return () => unsubAuth();
+  }, []);
 
-    return () => {
-      unsubSettings();
-      unsubPlans();
-      unsubAuth();
-      window.removeEventListener('message', handleOAuthMessage);
-    };
-  }, [systemSettings?.allowedAdmins]);
-
-  const handleSignIn = async () => {
+  const handleGoogleSignIn = async () => {
     try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      await signInWithPopup(auth, googleProvider);
     } catch (err: any) {
-      console.error("Auth Fail:", err);
-      if (err.code === 'auth/unauthorized-domain') {
-        toast.error(`CONFIGURATION REQUIRED: The domain "${window.location.host}" is not authorized in the Firebase Console. \n\nGo to Authentication > Settings > Authorized Domains and add it.`);
+      toast.error(`Sign-in failed: ${err.message}`);
+    }
+  };
+
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (isRegistering) {
+        await createUserWithEmailAndPassword(auth, email, password);
+        toast.success("Account created successfully!");
       } else {
-        toast.error(`Sign-in failed: ${err.message}`);
+        await signInWithEmailAndPassword(auth, email, password);
       }
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleSendCode = async () => {
+    try {
+      if (!phoneNumber.startsWith('+')) {
+        toast.error("Phone number must include country code (e.g., +91...)");
+        return;
+      }
+      const verifier = new RecaptchaVerifier(auth, 'recaptcha-container', { size: 'invisible' });
+      const confirmation = await signInWithPhoneNumber(auth, phoneNumber, verifier);
+      setConfirmationResult(confirmation);
+      toast.success("Verification code sent to your phone.");
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleVerifyCode = async () => {
+    try {
+      if (!confirmationResult) return;
+      await confirmationResult.confirm(verificationCode);
+      toast.success("Phone verified successfully!");
+    } catch (err: any) {
+      toast.error(err.message);
     }
   };
 
@@ -190,7 +160,6 @@ export default function Dashboard() {
       const response = await fetch('/api/auth/twitch/url');
       const { url, error } = await response.json();
       if (error) throw new Error(error);
-      
       window.open(url, 'twitch_auth', 'width=600,height=700');
     } catch (err: any) {
       toast.error(`Twitch connection failed: ${err.message}`);
@@ -200,121 +169,191 @@ export default function Dashboard() {
   const handleSetup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-
-    const freePlan = availablePlans.find(p => p.price === 0) || availablePlans[0];
-    const trialDays = freePlan?.trialDays || 0;
-    const trialEndsAt = new Date();
-    trialEndsAt.setDate(trialEndsAt.getDate() + trialDays);
-
-    const envAdmins = (import.meta.env.VITE_PLATFORM_ADMINS || '').split(',').map((e: string) => e.trim());
-    const isSystemAdmin = user.email === 'dcpromoidse@gmail.com' || 
-                         systemSettings?.allowedAdmins.includes(user.email) ||
-                         envAdmins.includes(user.email);
-
-    const streamData = {
-      displayName,
-      username: username.toLowerCase().replace(/[^a-z0-9]/g, ''),
-      role: isSystemAdmin ? 'admin' : 'streamer',
-      subscriptionActive: true,
-      planId: freePlan?.id || 'standard',
-      isTrial: trialDays > 0,
-      trialEndsAt: trialDays > 0 ? trialEndsAt : null,
-      obsToken: `bst_${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}`,
-      createdAt: serverTimestamp(),
-      gateways: []
-    };
-
-    await setDoc(doc(db, 'streamers', user.uid), streamData);
-
-    // Default widgets
-    await addDoc(collection(db, 'widgets'), {
-      streamerId: user.uid,
-      type: 'alert',
-      config: { minAmount: 1, ttsEnabled: true, primaryColor: '#ea580c', animationType: 'fade-up' }
-    });
-    await addDoc(collection(db, 'widgets'), {
-      streamerId: user.uid,
-      type: 'goal',
-      config: { minAmount: 1, primaryColor: '#3b82f6', goalAmount: 10000, goalTitle: 'Streaming Setup' }
-    });
+    try {
+      const streamData = {
+        displayName,
+        username: username.toLowerCase().replace(/[^a-z0-9]/g, ''),
+        role: 'streamer',
+      };
+      await streamerApi.setup(streamData);
+      toast.success("Profile created successfully!");
+      fetchDashboardData();
+    } catch (err: any) {
+      toast.error(`Setup failed: ${err.response?.data?.error || err.message}`);
+    }
   };
 
   const updateGateways = async (type: string, config: any) => {
     if (!streamer) return;
     
-    // Split config into public and secret
+    const secretKeys = ['stripeSecretKey', 'razorpayKeySecret'];
     const publicConfig: any = {};
     const secretConfig: any = {};
     
-    // Identify secrets based on common naming or specific keys
-    const secretKeys = ['stripeSecretKey', 'razorpayKeySecret'];
-    
     Object.keys(config).forEach(key => {
-      if (secretKeys.includes(key)) {
-        secretConfig[key] = config[key];
-      } else {
-        publicConfig[key] = config[key];
-      }
+      if (secretKeys.includes(key)) secretConfig[key] = config[key];
+      else publicConfig[key] = config[key];
     });
 
     const existingGateways = streamer.gateways || [];
     const filtered = existingGateways.filter(g => g.type !== type);
-    const updatedGateways = [...filtered, { type, config: publicConfig }] as PaymentGateway[];
+    const updatedGateways = [...filtered, { type, config: publicConfig }];
     
     const existingSecrets = streamer.secrets || {};
     const updatedSecrets = { ...existingSecrets, ...secretConfig };
 
-    await updateDoc(doc(db, 'streamers', streamer.id), { 
-      gateways: updatedGateways,
-      secrets: updatedSecrets
-    });
+    try {
+      await streamerApi.update({ 
+        gateways: updatedGateways,
+        secrets: updatedSecrets
+      });
+      fetchDashboardData();
+      toast.success(`${type} configuration saved.`);
+    } catch (err) {
+      toast.error("Failed to save gateway config.");
+    }
   };
 
   const handleToggleSubscription = async (sid: string, active: boolean) => {
-    await updateDoc(doc(db, 'streamers', sid), { subscriptionActive: !active });
-    // Refresh admin view
-    const snap = await getDocs(collection(db, 'streamers'));
-    setAllStreamers(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Streamer)));
+    try {
+      // In MongoDB we use firebaseUid as the ID in many places or the Mongo _id
+      // Our admin route expects the mongo ID or UID? 
+      // Checking server.ts... it uses req.params.uid and matches firebaseUid
+      await streamerApi.update({ subscriptionActive: !active }); 
+      fetchDashboardData();
+    } catch (err) {
+      toast.error("Failed to update status.");
+    }
   };
 
   const handleAddWidget = async (type: 'alert' | 'goal' | 'ticker') => {
-    if (!streamer || !user) return;
-    
-    await addDoc(collection(db, 'widgets'), {
-      streamerId: user.uid,
-      type,
-      config: type === 'ticker' ? { minAmount: 1, primaryColor: '#ef4444', tickerSpeed: 'normal', showText: true } : 
-             type === 'goal' ? { minAmount: 1, primaryColor: '#3b82f6', goalAmount: 5000, goalTitle: 'New Goal' } :
-             { minAmount: 1, ttsEnabled: true, primaryColor: '#ea580c', animationType: 'fade-up' }
-    });
+    try {
+      await widgetApi.create({
+        type,
+        config: type === 'ticker' ? { minAmount: 1, primaryColor: '#ef4444', tickerSpeed: 'normal', showText: true } : 
+               type === 'goal' ? { minAmount: 1, primaryColor: '#3b82f6', goalAmount: 5000, goalTitle: 'New Goal' } :
+               { minAmount: 1, ttsEnabled: true, primaryColor: '#ea580c', animationType: 'fade-up' }
+      });
+      fetchDashboardData();
+    } catch (err) {
+      toast.error("Failed to add widget.");
+    }
   };
 
   if (loading) return <div className="pt-40 text-center text-neutral-500 italic">Authenticating {systemSettings?.platformName || 'Boost'} session...</div>;
   if (!user) {
     return (
-      <main className="pt-40 px-4 text-center">
-        <div className="max-w-md mx-auto p-12 rounded-[2.5rem] bg-neutral-900 border border-white/5 shadow-2xl relative overflow-hidden">
+      <main className="pt-24 px-4 text-center">
+        <div id="recaptcha-container"></div>
+        <div className="max-w-md mx-auto p-8 md:p-12 rounded-[2.5rem] bg-neutral-900 border border-white/5 shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1 bg-orange-600" />
-          <div className="w-20 h-20 bg-orange-600/10 rounded-3xl flex items-center justify-center mx-auto mb-8 text-orange-500">
-            <Wallet size={40} />
+          <div className="w-16 h-16 bg-orange-600/10 rounded-2xl flex items-center justify-center mx-auto mb-6 text-orange-500">
+            <ShieldCheck size={32} />
           </div>
-          <h1 className="text-4xl font-bold tracking-tight mb-4">Creator Login</h1>
-          <div className="space-y-4 mb-10">
-            <button 
-              onClick={handleSignIn}
-              className="w-full bg-white text-black py-4 rounded-2xl font-bold hover:bg-neutral-200 transition-all flex items-center justify-center gap-3 active:scale-95 shadow-xl"
-            >
-              <img src="https://www.vectorlogo.zone/logos/google/google-icon.svg" className="w-5" alt="" />
-              Continue with Google
-            </button>
-            <button 
-              onClick={handleTwitchSignIn}
-              className="w-full bg-[#9146FF] text-white py-4 rounded-2xl font-bold hover:bg-[#a970ff] transition-all flex items-center justify-center gap-3 active:scale-95 shadow-xl"
-            >
-              <Play size={20} fill="currentColor" />
-              Sign in with Twitch
-            </button>
-          </div>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">Creator Login</h1>
+          <p className="text-neutral-500 text-sm mb-8">Choose your preferred way to sign in</p>
+
+          <AnimatePresence mode="wait">
+            {authMode === 'options' && (
+              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-3">
+                <button 
+                  onClick={handleGoogleSignIn}
+                  className="w-full bg-white text-black py-4 rounded-2xl font-bold hover:bg-neutral-200 transition-all flex items-center justify-center gap-3 active:scale-95 border border-white/10"
+                >
+                  <img src="https://www.vectorlogo.zone/logos/google/google-icon.svg" className="w-5" alt="" />
+                  Continue with Google
+                </button>
+                <button 
+                  onClick={() => setAuthMode('email')}
+                  className="w-full bg-neutral-800 text-white py-4 rounded-2xl font-bold hover:bg-neutral-700 transition-all flex items-center justify-center gap-3 active:scale-95 border border-white/5"
+                >
+                  <Globe size={18} />
+                  Email & Password
+                </button>
+                <button 
+                  onClick={() => setAuthMode('phone')}
+                  className="w-full bg-neutral-800 text-white py-4 rounded-2xl font-bold hover:bg-neutral-700 transition-all flex items-center justify-center gap-3 active:scale-95 border border-white/5"
+                >
+                  <Users size={18} />
+                  Phone Number
+                </button>
+                <div className="pt-4 border-t border-white/5">
+                  <button 
+                    onClick={handleTwitchSignIn}
+                    className="w-full bg-[#9146FF] text-white py-4 rounded-2xl font-bold hover:bg-[#a970ff] transition-all flex items-center justify-center gap-3 active:scale-95 shadow-xl"
+                  >
+                    <Play size={18} fill="currentColor" />
+                    Sign in with Twitch
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {authMode === 'email' && (
+              <motion.form initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} onSubmit={handleEmailAuth} className="space-y-4">
+                <input 
+                  type="email" 
+                  placeholder="Email Address" 
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  className="w-full bg-neutral-950 border border-white/5 rounded-xl py-3 px-4 focus:border-orange-500 outline-none"
+                  required
+                />
+                <input 
+                  type="password" 
+                  placeholder="Password" 
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  className="w-full bg-neutral-950 border border-white/5 rounded-xl py-3 px-4 focus:border-orange-500 outline-none"
+                  required
+                />
+                <button className="w-full bg-orange-600 text-white py-4 rounded-xl font-bold hover:bg-orange-500 transition-all">
+                  {isRegistering ? 'Create Account' : 'Sign In'}
+                </button>
+                <div className="flex justify-between items-center text-xs">
+                  <button type="button" onClick={() => setIsRegistering(!isRegistering)} className="text-orange-500 hover:underline">
+                    {isRegistering ? 'Have an account? Login' : 'New here? Register'}
+                  </button>
+                  <button type="button" onClick={() => setAuthMode('options')} className="text-neutral-500 hover:text-white">Go Back</button>
+                </div>
+              </motion.form>
+            )}
+
+            {authMode === 'phone' && (
+              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4 text-left">
+                {!confirmationResult ? (
+                  <>
+                    <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest ml-1">Phone Number</label>
+                    <input 
+                      type="tel" 
+                      placeholder="+91 98765 43210" 
+                      value={phoneNumber}
+                      onChange={e => setPhoneNumber(e.target.value)}
+                      className="w-full bg-neutral-950 border border-white/5 rounded-xl py-4 px-4 focus:border-orange-500 outline-none text-xl font-bold text-center tracking-wider"
+                    />
+                    <button onClick={handleSendCode} className="w-full bg-orange-600 text-white py-4 rounded-xl font-bold hover:bg-orange-500 transition-all">
+                      Send OTP
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest ml-1">Enter Verification Code</label>
+                    <input 
+                      type="text" 
+                      placeholder="XXXXXX" 
+                      value={verificationCode}
+                      onChange={e => setVerificationCode(e.target.value)}
+                      className="w-full bg-neutral-950 border border-white/5 rounded-xl py-4 px-4 focus:border-orange-500 outline-none text-2xl font-black text-center tracking-[1rem]"
+                    />
+                    <button onClick={handleVerifyCode} className="w-full bg-green-600 text-white py-4 rounded-xl font-bold hover:bg-green-500 transition-all">
+                      Verify & Login
+                    </button>
+                  </>
+                )}
+                <button onClick={() => { setAuthMode('options'); setConfirmationResult(null); }} className="w-full text-neutral-500 text-sm hover:text-white mt-2">Go Back</button>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </main>
     );
@@ -356,6 +395,7 @@ export default function Dashboard() {
           <button className="w-full bg-orange-600 text-white py-5 rounded-[1.5rem] font-bold text-lg hover:bg-orange-500 transition-all shadow-[0_0_30px_rgba(234,88,12,0.3)] active:scale-95">
             Create Profile
           </button>
+          <button type="button" onClick={() => signOut(auth)} className="w-full text-neutral-500 hover:text-white text-sm">Sign Out</button>
         </form>
       </main>
     );
@@ -369,14 +409,46 @@ export default function Dashboard() {
           <h1 className="text-3xl font-bold mb-1 tracking-tight">{systemSettings?.platformName || 'Boost'} <span className="text-orange-500">Console</span></h1>
           <p className="text-neutral-500 text-sm font-medium">Logged in as {streamer.displayName} (@{streamer.username})</p>
         </div>
-        <div className="flex gap-4">
-           <a 
+        <div className="flex flex-wrap items-center gap-4">
+          {/* DB Connection LED Indicator */}
+          <div className="bg-neutral-900 border border-white/5 rounded-2xl px-4 py-3 flex items-center gap-3 backdrop-blur-md">
+            <div className="relative flex h-3 w-3">
+              <span className={cn(
+                "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75",
+                dbStatus === 'connected' ? "bg-green-400" : dbStatus === 'disconnected' ? "bg-red-400" : "bg-yellow-400"
+              )}></span>
+              <span className={cn(
+                "relative inline-flex rounded-full h-3 w-3",
+                dbStatus === 'connected' ? "bg-green-500" : dbStatus === 'disconnected' ? "bg-red-500" : "bg-yellow-500"
+              )}></span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-black tracking-widest text-neutral-500 uppercase leading-none mb-1">System Engine</span>
+              <span className="text-xs font-bold text-neutral-300 leading-none">
+                {dbStatus === 'connected' ? "DATABASE LINKED" : dbStatus === 'disconnected' ? "LINK SEVERED" : "INITIALIZING"}
+              </span>
+            </div>
+            <button 
+              onClick={async () => {
+                setDbStatus('checking');
+                fetchDashboardData();
+                setDbStatus('connected');
+                toast.info("Syncing with core engine...");
+              }}
+              className="ml-2 p-1.5 hover:bg-white/5 rounded-lg transition-colors text-neutral-500 hover:text-white"
+              title="Refresh Core Connection"
+            >
+              <Activity size={14} />
+            </button>
+          </div>
+
+          <a 
             href={`/t/${streamer.username}`} 
             target="_blank" 
             className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-sm font-bold shadow-lg"
-           >
+          >
              <ExternalLink size={16} /> My Tipping Page
-           </a>
+          </a>
         </div>
       </div>
 
@@ -420,7 +492,7 @@ export default function Dashboard() {
                 value={availablePlans.find(p => p.id === streamer.planId)?.name || 'Default Tier'} 
                 badge={streamer.isTrial ? "TRIAL" : "ACTIVE"} 
                 icon={<Zap className={cn(streamer.isTrial ? "text-orange-400" : "text-orange-500")} />} 
-                change={streamer.isTrial ? `${Math.ceil((streamer.trialEndsAt?.toDate().getTime() - Date.now()) / (1000 * 60 * 60 * 24))} days left` : undefined}
+                change={streamer.isTrial ? `${Math.ceil((new Date(streamer.trialEndsAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24))} days left` : undefined}
               />
             </div>
 
@@ -440,9 +512,6 @@ export default function Dashboard() {
                       <div>
                         <p className="font-bold flex items-center gap-2">
                           {donation.donorName} 
-                          <span className="text-[10px] bg-white/5 px-1.5 py-0.5 rounded border border-white/10 text-neutral-500 uppercase tracking-tighter">
-                            {donation.gatewayUsed}
-                          </span>
                         </p>
                         <p className="text-sm text-neutral-400 mt-1 italic line-clamp-1">"{donation.message}"</p>
                       </div>
@@ -450,7 +519,7 @@ export default function Dashboard() {
                     <div className="text-right">
                       <p className="font-bold text-xl">{donation.currency || '$'} {donation.amount}</p>
                       <p className="text-[10px] text-neutral-600 uppercase font-bold tracking-widest mt-1">
-                        {donation.createdAt?.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(donation.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </div>
                   </div>
@@ -529,21 +598,19 @@ export default function Dashboard() {
                   onClick={async () => {
                     if (!streamer) return;
                     try {
-                      await addDoc(collection(db, 'donations'), {
-                        streamerId: streamer.id,
+                      await donationApi.recordSuccess({
+                        streamerId: streamer.firebaseUid,
                         donorName: 'Test Supporter',
                         amount: 69,
                         currency: '₹',
                         message: 'This is a test tip to verify your full stream setup! AI voice should play now.',
-                        isTTSPlayed: false,
-                        gatewayUsed: 'test_trigger',
                         status: 'verified',
-                        createdAt: serverTimestamp(),
                       });
                       toast.success("Test tip triggered! Check your OBS or Overlay page.");
+                      fetchDashboardData();
                     } catch (err) {
                       console.error(err);
-                      toast.error("Failed to trigger test tip. Check permissions.");
+                      toast.error("Failed to trigger test tip.");
                     }
                   }}
                   className="bg-orange-600 hover:bg-orange-500 text-white px-8 py-3 rounded-2xl font-bold transition-all shadow-lg shadow-orange-600/20 active:scale-95 flex items-center gap-2 mx-auto"

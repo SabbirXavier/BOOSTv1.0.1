@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
-import { CreditCard, Send, IndianRupee, MessageCircle, CheckCircle2, ShieldCheck, Globe, Zap } from 'lucide-react';
-import { db } from '../lib/firebase';
-import { collection, query, where, getDocs, addDoc, serverTimestamp, doc, onSnapshot } from 'firebase/firestore';
+import { CreditCard, Send, IndianRupee, MessageCircle, CheckCircle2, ShieldCheck, Globe, Zap, AlertCircle, Link as LinkIcon } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { streamerApi, donationApi, adminApi } from '../lib/api';
 import { Streamer } from '../types';
 import { cn } from '../lib/utils';
 
@@ -19,12 +19,12 @@ export default function TipPage() {
   const [selectedGateway, setSelectedGateway] = useState<string>('');
   const [status, setStatus] = useState<'idle' | 'processing' | 'success'>('idle');
   const [platformName, setPlatformName] = useState('Boost');
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, 'settings', 'platform'), (snap) => {
-      if (snap.exists()) setPlatformName(snap.data().platformName);
-    });
-    return unsub;
+    adminApi.getSettings().then(s => {
+      if (s?.platformName) setPlatformName(s.platformName);
+    }).catch(console.error);
   }, []);
 
   const currencyMap: Record<string, string> = {
@@ -36,30 +36,39 @@ export default function TipPage() {
 
   useEffect(() => {
     async function fetchStreamer() {
-      const q = query(collection(db, 'streamers'), where('username', '==', username));
-      const querySnapshot = await getDocs(q);
-      if (!querySnapshot.empty) {
-        const data = { id: querySnapshot.docs[0].id, ...querySnapshot.docs[0].data() } as Streamer;
+      if (!username) return;
+      setLoading(true);
+      setError(null);
+      
+      try {
+        const data = await streamerApi.getByUsername(username);
         setStreamer(data);
         
         if (data.preferredCurrency && currencyMap[data.preferredCurrency]) {
           setCurrency(currencyMap[data.preferredCurrency]);
         }
 
-        const activeGateways = (data.gateways || []).filter(g => g.config.enabled || (g.config.connected && g.config.enabled === undefined));
+        const activeGateways = (data.gateways || []).filter((g: any) => g.config.enabled || (g.config.connected && g.config.enabled === undefined));
         if (activeGateways.length > 0) {
           setSelectedGateway(activeGateways[0].type);
         }
         
-        // Load Razorpay Script if Razorpay is enabled and active
-        if (activeGateways.some(g => g.type === 'razorpay')) {
+        if (activeGateways.some((g: any) => g.type === 'razorpay')) {
           const script = document.createElement('script');
           script.src = 'https://checkout.razorpay.com/v1/checkout.js';
           script.async = true;
           document.body.appendChild(script);
         }
+      } catch (err: any) {
+        console.error("[TipPage] Error:", err);
+        if (err.response?.status === 404) {
+          setStreamer(null);
+        } else {
+          setError(`Service Error: ${err.message}`);
+        }
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     }
     fetchStreamer();
   }, [username]);
@@ -72,18 +81,11 @@ export default function TipPage() {
 
     if (selectedGateway === 'razorpay') {
       try {
-        const response = await fetch('/api/payment/razorpay/order', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            streamerId: streamer.id,
-            amount: parseFloat(amount),
-            currency: currency
-          })
+        const data = await donationApi.createOrder({
+          streamerId: streamer.firebaseUid,
+          amount: parseFloat(amount),
+          currency: currency === '₹' ? 'INR' : currency === '$' ? 'USD' : 'INR'
         });
-
-        const data = await response.json();
-        if (data.error) throw new Error(data.error);
 
         const options = {
           key: data.keyId,
@@ -93,19 +95,15 @@ export default function TipPage() {
           description: `Tip for ${streamer.displayName}`,
           order_id: data.orderId,
           handler: async function (response: any) {
-            // Verification logic would go here, for now we assume success if handler called
             try {
-              await addDoc(collection(db, 'donations'), {
-                streamerId: streamer.id,
+              await donationApi.recordSuccess({
+                streamerId: streamer.firebaseUid,
                 donorName: donorName || 'Anonymous',
                 amount: parseFloat(amount),
                 currency: currency,
                 message: message,
-                isTTSPlayed: false,
-                gatewayUsed: 'razorpay',
-                status: 'verified',
-                razorpayId: response.razorpay_payment_id,
-                createdAt: serverTimestamp(),
+                paymentId: response.razorpay_payment_id,
+                orderId: data.orderId
               });
               setStatus('success');
             } catch (err) {
@@ -123,7 +121,7 @@ export default function TipPage() {
 
         const rzp = new (window as any).Razorpay(options);
         rzp.open();
-        setStatus('idle'); // Set idle so they can click again if they close it? No, maybe keep processing until closed.
+        setStatus('idle');
       } catch (err: any) {
         console.error(err);
         toast.error(`Payment Initialization Failed: ${err.message}`);
@@ -132,19 +130,16 @@ export default function TipPage() {
       return;
     }
 
-    // Default/Legacy Mock logic for other gateways
+    // Manual/Other Gateways
     setTimeout(async () => {
       try {
-        await addDoc(collection(db, 'donations'), {
-          streamerId: streamer.id,
+        await donationApi.recordSuccess({
+          streamerId: streamer.firebaseUid,
           donorName: donorName || 'Anonymous',
           amount: parseFloat(amount),
           currency: currency,
           message: message,
-          isTTSPlayed: false,
-          gatewayUsed: selectedGateway,
-          status: selectedGateway === 'upi_direct' ? 'pending' : 'verified',
-          createdAt: serverTimestamp(),
+          status: selectedGateway === 'upi_direct' ? 'pending' : 'verified'
         });
         setStatus('success');
       } catch (err) {
@@ -154,8 +149,27 @@ export default function TipPage() {
     }, 1500);
   };
 
-  if (loading) return <div className="pt-40 text-center">Loading profile...</div>;
-  if (!streamer) return <div className="pt-40 text-center">Streamer not found</div>;
+  if (error) return <div className="pt-40 px-4 text-center text-red-500 font-bold max-w-md mx-auto bg-red-500/10 p-6 rounded-2xl border border-red-500/20">{error}</div>;
+
+  if (loading) return (
+    <div className="pt-40 text-center flex flex-col items-center gap-4">
+      <div className="w-10 h-10 border-4 border-orange-600/20 border-t-orange-600 rounded-full animate-spin" />
+      <span className="text-neutral-500 font-medium italic">Synchronizing profile...</span>
+    </div>
+  );
+
+  if (!streamer) return (
+    <div className="pt-40 text-center flex flex-col items-center gap-6">
+      <div className="w-20 h-20 bg-neutral-900 rounded-3xl flex items-center justify-center text-neutral-600 border border-white/5">
+         <AlertCircle size={40} />
+      </div>
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight mb-2 uppercase italic tracking-tighter">Profile Not Found</h1>
+        <p className="text-neutral-500 max-w-xs mx-auto">No creator discovered with the handle <span className="text-orange-500 font-bold italic">@{username}</span>. Are you sure it's claimed?</p>
+      </div>
+      <Link to="/dashboard" className="px-6 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-sm font-bold border border-white/5 transition-colors">Return to Console</Link>
+    </div>
+  );
 
   return (
     <main className="pt-24 pb-20 px-4">

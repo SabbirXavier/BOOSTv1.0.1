@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../../lib/firebase';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { adminApi } from '../../lib/api';
 import { SubscriptionPlan, SystemSettings } from '../../types';
 import { Plus, Trash2, Edit3, Save, X, Check, Search, IndianRupee, Clock, Mic, Info } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -17,27 +16,33 @@ export default function PlanManager({ settings }: Props) {
   const [showComparison, setShowComparison] = useState(false);
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'plans'), (snap) => {
-      setPlans(snap.docs.map(d => ({ id: d.id, ...d.data() } as SubscriptionPlan)));
-      setLoading(false);
-    });
-    return unsub;
+    adminApi.getPlans().then(setPlans).catch(console.error).finally(() => setLoading(false));
   }, []);
 
   const handleSave = async (plan: Partial<SubscriptionPlan>) => {
-    const id = plan.id || Math.random().toString(36).substr(2, 9);
-    const planData = {
-      ...plan,
-      id
-    };
-    await setDoc(doc(db, 'plans', id), planData);
-    setEditingPlan(null);
-    setIsCreating(false);
+    try {
+      if (plan.id) {
+        await adminApi.updatePlan(plan.id, plan);
+      } else {
+        await adminApi.createPlan(plan);
+      }
+      const updated = await adminApi.getPlans();
+      setPlans(updated);
+      setEditingPlan(null);
+      setIsCreating(false);
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this plan?')) {
-      await deleteDoc(doc(db, 'plans', id));
+      try {
+        await adminApi.deletePlan(id);
+        setPlans(plans.filter(p => p.id !== id));
+      } catch (err) {
+        console.error(err);
+      }
     }
   };
 

@@ -30,7 +30,9 @@ service cloud.firestore {
       return data.displayName is string && data.displayName.size() <= 100 &&
              data.username is string && data.username.size() <= 50 &&
              data.role in ['streamer', 'admin'] &&
-             data.subscriptionActive is bool;
+             data.subscriptionActive is bool &&
+             (data.get('planId', 'standard') is string) &&
+             (data.get('gateways', []) is list);
     }
 
     function isValidDonation(data) {
@@ -74,7 +76,7 @@ service cloud.firestore {
         isValidStreamer(incoming()) &&
         incoming().role == existing().role // Users cannot change their own role
       );
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || (isVerified() && request.auth.uid == streamerId);
     }
 
     // 2. Donations Collection
