@@ -51,13 +51,12 @@ mongoose.set('bufferCommands', false);
 
 if (MONGODB_URI) {
   // AUTO-FIX: If password contains unencoded '@', sanitize it.
-  // Pattern: mongodb+srv://user:pass@word@cluster...
   if (MONGODB_URI.startsWith('mongodb') && MONGODB_URI.split('@').length > 2) {
     const parts = MONGODB_URI.split('@');
-    const clusterPart = parts.pop(); // The cluster and query params
-    const authPart = parts.join('%40'); // Replace intermediate @ with encoded %40
+    const clusterPart = parts.pop();
+    const authPart = parts.join('%40');
     MONGODB_URI = `${authPart}@${clusterPart}`;
-    console.log("MONGODB_URI: Automatically sanitized URI to handle special characters in password.");
+    console.log("MONGODB_URI: Automatically sanitized URI.");
   }
 
   mongoose.connect(MONGODB_URI, { 
@@ -66,13 +65,12 @@ if (MONGODB_URI) {
     .then(() => console.log("Connected to MongoDB Core Engine"))
     .catch(err => {
       console.error("MongoDB Connection Error:", err);
-      if (err.message.includes('Authentication failed') || err.message.includes('auth failed')) {
-        console.error("HINT: Database authentication failed. Check your password. If it has '@', ensure it matches the portal exactly.");
-      }
     });
 } else {
-  console.warn("MONGODB_URI is not defined. Database operations will fail immediately.");
+  console.warn("MONGODB_URI is not defined.");
 }
+
+// TTS is handled client-side via Web Speech API
 
 // MongoDB Schemas
 const streamerSchema = new mongoose.Schema({
@@ -280,6 +278,11 @@ async function startServer() {
     res.json(updated);
   }));
 
+  app.delete('/api/widgets/:id', verifyAuth, asyncHandler(async (req: any, res: any) => {
+    await WidgetModel.deleteOne({ _id: req.params.id, streamerId: req.user.uid });
+    res.json({ success: true });
+  }));
+
   // --- Donation Routes ---
   app.get('/api/donations', verifyAuth, asyncHandler(async (req: any, res: any) => {
     const donations = await DonationModel.find({ streamerId: req.user.uid }).sort({ createdAt: -1 }).limit(50);
@@ -328,27 +331,8 @@ async function startServer() {
   }));
 
   app.post('/api/tts', asyncHandler(async (req: any, res: any) => {
-    const { text, voiceName } = req.body;
-    if (!text) return res.status(400).json({ error: 'Text required' });
-    
-    const { GoogleGenAI, Modality } = await import("@google/genai");
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-    
-    const response = await ai.models.generateContent({
-      model: "gemini-1.5-flash",
-      contents: [{ parts: [{ text: `Generate spoken audio for this message: ${text}` }] }],
-      config: {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: voiceName || 'Zephyr' },
-          },
-        },
-      },
-    });
-
-    const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    res.json({ audioData });
+    // TTS is now handled client-side for a free, open-source experience.
+    res.status(410).json({ error: 'Server-side TTS is deprecated. Please use client-side SpeechSynthesis.' });
   }));
 
   // --- Admin Routes ---

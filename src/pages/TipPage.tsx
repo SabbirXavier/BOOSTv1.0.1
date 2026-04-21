@@ -164,7 +164,7 @@ export default function TipPage() {
          <AlertCircle size={40} />
       </div>
       <div>
-        <h1 className="text-2xl font-bold tracking-tight mb-2 uppercase italic tracking-tighter">Profile Not Found</h1>
+        <h1 className="text-2xl font-bold tracking-tight mb-2 uppercase italic tracking-tighter pr-2">Profile Not Found</h1>
         <p className="text-neutral-500 max-w-xs mx-auto">No creator discovered with the handle <span className="text-orange-500 font-bold italic">@{username}</span>. Are you sure it's claimed?</p>
       </div>
       <Link to="/dashboard" className="px-6 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-sm font-bold border border-white/5 transition-colors">Return to Console</Link>
@@ -196,7 +196,7 @@ export default function TipPage() {
             <p className="text-neutral-400 text-sm mb-6 flex items-center gap-1">
               @{streamer.username}
               <div className="w-1 h-1 rounded-full bg-neutral-700 mx-1" />
-              <span className="text-[10px] uppercase font-black text-orange-500 tracking-tighter italic">Verified Creator</span>
+              <span className="text-[10px] uppercase font-black text-orange-500 tracking-tighter italic pr-1">Verified Creator</span>
             </p>
             <p className="text-neutral-300 text-sm mb-8 leading-relaxed italic">
               "{streamer.bio || "Supporting the stream one tip at a time! 🚀"}"

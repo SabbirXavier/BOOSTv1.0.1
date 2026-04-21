@@ -47,7 +47,7 @@ export default function Navbar() {
           <div className="w-8 h-8 bg-orange-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg shadow-orange-600/20">
             <Zap size={18} className="text-white fill-white" />
           </div>
-          <span className="font-bold text-xl tracking-tight bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent italic uppercase">
+          <span className="font-bold text-xl tracking-tight bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent italic uppercase pr-1">
             {platformName}
           </span>
         </Link>

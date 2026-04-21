@@ -1,45 +1,90 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Palette, Play, Save, Info, AlertCircle, Volume2, Mic, Headphones, IndianRupee } from 'lucide-react';
+import { Palette, Play, Save, Info, AlertCircle, Volume2, Mic, Headphones, IndianRupee, Trash2 } from 'lucide-react';
 import { Widget } from '../../types';
 import { widgetApi } from '../../lib/api';
 import { cn } from '../../lib/utils';
-import { generateTTS } from '../../lib/gemini';
+import { toast } from 'sonner';
 
 interface Props {
   widget: Widget;
+  onUpdate?: () => void;
 }
 
-export default function WidgetCustomizer({ widget }: Props) {
+export default function WidgetCustomizer({ widget, onUpdate }: Props) {
   const [config, setConfig] = useState(widget.config);
   const [saving, setSaving] = useState(false);
   const [previewingVoice, setPreviewingVoice] = useState(false);
   const [testAlert, setTestAlert] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const handleSave = async () => {
     setSaving(true);
     try {
       await widgetApi.update(widget.id, config);
+      toast.success("Widget settings saved!");
+      if (onUpdate) onUpdate();
     } catch (err) {
       console.error(err);
+      toast.error("Failed to save widget settings.");
     }
     setSaving(false);
   };
 
+  const handleDelete = async () => {
+    if (!window.confirm("Are you sure you want to delete this widget?")) return;
+    setDeleting(true);
+    try {
+      await widgetApi.delete(widget.id);
+      toast.success("Widget removed.");
+      if (onUpdate) onUpdate();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(`Deletion failed: ${err.message}`);
+    }
+    setDeleting(false);
+  };
+
   const handlePreviewVoice = async () => {
     if (previewingVoice) return;
+    if (!window.speechSynthesis) {
+      toast.error("TTS not supported in this browser.");
+      return;
+    }
+    
     setPreviewingVoice(true);
     try {
-      const voice = config.ttsVoice || 'Zephyr';
-      const audioBase64 = await generateTTS(`Hello! I am the ${voice} voice. This is how I will sound on your stream.`, voice);
-      if (audioBase64) {
-        const audio = new Audio(`data:audio/wav;base64,${audioBase64}`);
-        await audio.play();
+      const voiceName = config.ttsVoice || 'Zephyr';
+      const text = `Hello! This is a preview of your alert message. Settings: ${voiceName}.`;
+      
+      const utterance = new SpeechSynthesisUtterance(text);
+      const voices = window.speechSynthesis.getVoices();
+      
+      // Basic mapping for legacy AI names to system voices
+      let voice;
+      if (voiceName === 'Charon') {
+        voice = voices.find(v => v.name.toLowerCase().includes('male') || v.name.toLowerCase().includes('david'));
+      } else if (voiceName === 'Kore' || voiceName === 'Zephyr') {
+        voice = voices.find(v => v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('zira'));
       }
-    } catch (err) {
+
+      if (voice) utterance.voice = voice;
+      utterance.rate = 0.9;
+      utterance.pitch = config.ttsPitch || 1.0;
+      utterance.volume = config.ttsVolume || 1.0;
+      
+      utterance.onend = () => setPreviewingVoice(false);
+      utterance.onerror = () => setPreviewingVoice(false);
+      
+      window.speechSynthesis.speak(utterance);
+      
+      // Fallback if end never triggers
+      setTimeout(() => setPreviewingVoice(false), 5000);
+    } catch (err: any) {
       console.error(err);
+      toast.error("TTS Preview failed.");
+      setPreviewingVoice(false);
     }
-    setPreviewingVoice(false);
   };
 
   const triggerTestAlert = () => {
@@ -75,7 +120,7 @@ export default function WidgetCustomizer({ widget }: Props) {
                    className="bg-black/90 p-6 rounded-3xl border border-white/10 text-center shadow-2xl relative z-10"
                 >
                   <div className="w-12 h-12 rounded-xl mx-auto mb-4 animate-bounce" style={{ backgroundColor: config.primaryColor }} />
-                  <p className="font-black text-white uppercase italic text-lg tracking-tighter">DONOR Name Sent ₹50</p>
+                  <p className="font-black text-white uppercase italic text-lg tracking-tighter pr-1">DONOR Name Sent ₹50</p>
                   <p className="text-sm text-neutral-400 mt-2 italic">"Example message for {widget.type}!"</p>
                 </motion.div>
               )}
@@ -173,11 +218,11 @@ export default function WidgetCustomizer({ widget }: Props) {
                       onChange={(e) => setConfig({ ...config, ttsVoice: e.target.value })}
                       className="grow bg-neutral-950 border border-white/10 rounded-xl p-3 outline-none text-sm font-bold appearance-none bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23666%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C/polyline%3E%3C/svg%3E')] bg-[length:20px] bg-[right_12px_center] bg-no-repeat"
                     >
-                      <option value="Zephyr">Zephyr (Energetic)</option>
-                      <option value="Kore">Kore (Balanced)</option>
-                      <option value="Puck">Puck (Playful)</option>
-                      <option value="Charon">Charon (Deep/Narration)</option>
-                      <option value="Fenrir">Fenrir (Mysterious)</option>
+                      <option value="Zephyr">Deep/Male (System)</option>
+                      <option value="Kore">Natural/Female (System)</option>
+                      <option value="Puck">Playful/High (System)</option>
+                      <option value="Charon">Slow/Serious (System)</option>
+                      <option value="Standard">Default OS Voice</option>
                     </select>
                     <button 
                       onClick={handlePreviewVoice}
@@ -187,6 +232,33 @@ export default function WidgetCustomizer({ widget }: Props) {
                     >
                       {previewingVoice ? <div className="w-5 h-5 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" /> : <Volume2 size={20} />}
                     </button>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4 pt-2">
+                    <div className="space-y-1">
+                      <div className="flex justify-between">
+                        <label className="text-[10px] font-bold uppercase text-neutral-500">Pitch</label>
+                        <span className="text-[10px] font-mono text-orange-500">{config.ttsPitch || 1.0}</span>
+                      </div>
+                      <input 
+                        type="range" min="0.5" max="2.0" step="0.1"
+                        value={config.ttsPitch || 1.0}
+                        onChange={(e) => setConfig({ ...config, ttsPitch: parseFloat(e.target.value) })}
+                        className="w-full accent-orange-500 h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex justify-between">
+                        <label className="text-[10px] font-bold uppercase text-neutral-500">Volume</label>
+                        <span className="text-[10px] font-mono text-orange-500">{Math.round((config.ttsVolume || 1.0) * 100)}%</span>
+                      </div>
+                      <input 
+                        type="range" min="0.1" max="1.0" step="0.1"
+                        value={config.ttsVolume || 1.0}
+                        onChange={(e) => setConfig({ ...config, ttsVolume: parseFloat(e.target.value) })}
+                        className="w-full accent-orange-500 h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer"
+                      />
+                    </div>
                   </div>
                </motion.div>
             )}
@@ -226,14 +298,24 @@ export default function WidgetCustomizer({ widget }: Props) {
            </div>
          )}
 
-         <button 
-          onClick={handleSave}
-          disabled={saving}
-          className="w-full bg-white text-black py-3 rounded-xl font-bold text-sm hover:bg-neutral-200 transition-colors flex items-center justify-center gap-2"
-         >
-           <Save size={16} /> {saving ? 'Saving...' : 'Save Changes'}
-         </button>
+         <div className="pt-4 border-t border-white/5 flex gap-3">
+            <button 
+              onClick={handleSave}
+              disabled={saving}
+              className="flex-1 bg-white text-black py-3 rounded-xl font-bold text-sm hover:bg-neutral-200 transition-colors flex items-center justify-center gap-2"
+            >
+              <Save size={16} /> {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+            <button 
+              onClick={handleDelete}
+              disabled={deleting}
+              className="px-4 bg-red-600/10 hover:bg-red-600 text-red-500 hover:text-white border border-red-500/20 rounded-xl transition-all flex items-center justify-center"
+              title="Delete Widget"
+            >
+              <Trash2 size={18} />
+            </button>
+         </div>
       </div>
-    </div>
+   </div>
   );
 }

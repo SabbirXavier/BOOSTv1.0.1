@@ -22,7 +22,7 @@ export default function SetupGuide({ streamer, widgets }: Props) {
           <Play size={40} className="text-white absolute ml-2" />
         </div>
         <div>
-          <h2 className="text-2xl font-black italic uppercase tracking-tighter mb-2">Connect to OBS Studio</h2>
+          <h2 className="text-2xl font-black italic uppercase tracking-tighter mb-2 pr-2">Connect to OBS Studio</h2>
           <p className="text-sm text-neutral-400 max-w-2xl leading-relaxed font-medium">
             Boost uses <span className="text-white font-bold italic">Browser Sources</span> to display real-time interactive overlays. No downloads or complicated plugins required.
           </p>

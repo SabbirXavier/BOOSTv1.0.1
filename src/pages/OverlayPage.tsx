@@ -3,7 +3,6 @@ import { useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
 import { Donation, Widget } from '../types';
-import { generateTTS } from '../lib/gemini';
 import { IndianRupee } from 'lucide-react';
 import axios from 'axios';
 
@@ -81,9 +80,12 @@ export default function OverlayPage() {
 
     // Handle TTS
     if (widget?.config.ttsEnabled && nextAlert.message) {
-      const audioBase64 = await generateTTS(nextAlert.message, widget.config.ttsVoice || 'Zephyr');
-      if (audioBase64) {
-        await playAudio(audioBase64);
+      try {
+        await speakText(nextAlert.message, widget.config.ttsVoice || 'Zephyr');
+      } catch (err) {
+        console.error("TTS failed:", err);
+        // Fallback delay if TTS fails
+        await new Promise(resolve => setTimeout(resolve, 5000));
       }
     } else {
       // Delay if no TTS
@@ -95,12 +97,52 @@ export default function OverlayPage() {
     setIsProcessing(false);
   };
 
-  const playAudio = (base64: string): Promise<void> => {
+  const speakText = (text: string, voiceName: string): Promise<void> => {
     return new Promise((resolve) => {
-      const audio = new Audio(`data:audio/wav;base64,${base64}`);
-      audio.onended = () => resolve();
-      audio.onerror = () => resolve();
-      audio.play().catch(() => resolve());
+      if (!window.speechSynthesis) return resolve();
+      
+      const startSpeaking = () => {
+        const utterance = new SpeechSynthesisUtterance(text);
+        
+        // Language Detection (Devanagari for Hindi/Marathi)
+        const hasDevanagari = /[\u0900-\u097F]/.test(text);
+        utterance.lang = hasDevanagari ? 'hi-IN' : 'en-US';
+        
+        // Voice Selection
+        const voices = window.speechSynthesis.getVoices();
+        let voice = voices.find(v => v.name.includes(voiceName));
+        
+        if (!voice && hasDevanagari) {
+          voice = voices.find(v => v.lang.startsWith('hi'));
+        }
+        
+        if (voice) utterance.voice = voice;
+        
+        utterance.rate = 0.9;
+        utterance.pitch = widget?.config.ttsPitch || 1.0;
+        utterance.volume = widget?.config.ttsVolume || 1.0;
+        
+        utterance.onend = () => resolve();
+        utterance.onerror = (e) => {
+          console.error("SpeechSynthesis Error:", e);
+          resolve();
+        };
+        
+        window.speechSynthesis.speak(utterance);
+      };
+
+      // In some browsers, voices are loaded asynchronously
+      if (window.speechSynthesis.getVoices().length === 0) {
+        window.speechSynthesis.onvoiceschanged = () => {
+          startSpeaking();
+          window.speechSynthesis.onvoiceschanged = null;
+        };
+      } else {
+        startSpeaking();
+      }
+      
+      // Safety timeout
+      setTimeout(resolve, 15000);
     });
   };
 

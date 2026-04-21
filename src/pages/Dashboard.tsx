@@ -57,6 +57,11 @@ export default function Dashboard() {
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
 
+  const totalEarnings = donations
+    .filter(d => d.status === 'verified')
+    .reduce((acc, d) => acc + (d.amount || 0), 0);
+  const totalTipsCount = donations.filter(d => d.status === 'verified').length;
+
   const fetchDashboardData = async () => {
     try {
       const s = await streamerApi.getMe();
@@ -474,7 +479,7 @@ export default function Dashboard() {
             <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mx-auto text-red-500">
                <ShieldCheck size={40} />
             </div>
-            <h2 className="text-3xl font-black italic tracking-tighter uppercase">Access Restricted</h2>
+            <h2 className="text-3xl font-black italic tracking-tighter uppercase pr-2">Access Restricted</h2>
             <p className="text-neutral-500 max-w-sm mx-auto">This module is reserved for Platform Administrators. Please contact the site owner for permissions.</p>
             <button onClick={() => setActiveTab('overview')} className="px-8 py-3 bg-white text-black rounded-xl font-bold">Back to Overview</button>
          </div>
@@ -484,8 +489,16 @@ export default function Dashboard() {
         {activeTab === 'overview' && (
           <motion.div key="overview" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-              <StatCard title="Earnings" value="₹24,800" icon={<IndianRupee className="text-green-500" />} change="+12%" />
-              <StatCard title="Total Tips" value="102" icon={<Users className="text-blue-500" />} change="+5%" />
+              <StatCard 
+                title="Earnings" 
+                value={`₹${totalEarnings.toLocaleString('en-IN')}`} 
+                icon={<IndianRupee className="text-green-500" />} 
+              />
+              <StatCard 
+                title="Total Tips" 
+                value={totalTipsCount.toString()} 
+                icon={<Users className="text-blue-500" />} 
+              />
               <StatCard title="Global Reach" value="International" badge="GLOBAL" icon={<Globe className="text-blue-400" />} />
               <StatCard 
                 title="Active Plan" 
@@ -536,7 +549,7 @@ export default function Dashboard() {
                   <Play size={40} className="text-white ml-2" />
                </div>
                <div>
-                 <h2 className="text-2xl font-black italic uppercase tracking-tighter mb-2">How to Setup OBS / Streamlabs</h2>
+                 <h2 className="text-2xl font-black italic uppercase tracking-tighter mb-2 pr-2">How to Setup OBS / Streamlabs</h2>
                  <p className="text-sm text-neutral-400 max-w-2xl leading-relaxed">
                    {systemSettings?.platformName || 'Boost'} works as a <span className="text-white font-bold italic">Browser Source</span>. Perfect for OBS, Streamlabs, and vMix. No plugin download required. 
                  </p>
@@ -563,30 +576,30 @@ export default function Dashboard() {
                 </div>
              </div>
 
-             {widgets.map(w => (
-               <div key={w.id} className="bg-neutral-900/50 border border-white/10 rounded-[2.5rem] p-8 backdrop-blur-sm shadow-xl">
-                  <div className="flex flex-col md:flex-row items-center justify-between mb-8 gap-4">
-                    <h3 className="text-2xl font-black uppercase italic tracking-tighter flex items-center gap-3">
-                      <div className="w-2 h-8 bg-orange-600 rounded-full" />
-                      {w.type} WIDGET
-                    </h3>
-                    <div className="flex items-center gap-3 bg-neutral-950 px-4 py-3 rounded-2xl border border-white/5">
-                       <span className="text-[11px] font-mono text-neutral-500 truncate max-w-[200px]">.../overlay/{w.id}</span>
-                       <button 
-                        onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/overlay/${w.id}`); toast.success("Link copied to OBS source!"); }}
-                        className="p-2 rounded-lg bg-orange-600/10 text-orange-500 hover:bg-orange-600 hover:text-white transition-all active:scale-95 border border-orange-500/20"
-                        title="Copy Overlay URL"
-                       >
-                         <Copy size={16} />
-                       </button>
-                       <Link to={`/overlay/${w.id}`} target="_blank" className="p-2 rounded-lg bg-white/5 text-neutral-400 hover:text-white hover:bg-white/10 transition-all border border-white/5">
-                         <ExternalLink size={16} />
-                       </Link>
+                  {widgets.map(w => (
+                    <div key={w.id} className="bg-neutral-900/50 border border-white/10 rounded-[2.5rem] p-8 backdrop-blur-sm shadow-xl">
+                       <div className="flex flex-col md:flex-row items-center justify-between mb-8 gap-4">
+                         <h3 className="text-2xl font-black uppercase italic tracking-tighter flex items-center gap-3 pr-2">
+                           <div className="w-2 h-8 bg-orange-600 rounded-full" />
+                           {w.type} WIDGET
+                         </h3>
+                         <div className="flex items-center gap-3 bg-neutral-950 px-4 py-3 rounded-2xl border border-white/5">
+                            <span className="text-[11px] font-mono text-neutral-500 truncate max-w-[200px]">.../overlay/{w.id}</span>
+                            <button 
+                             onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/overlay/${w.id}`); toast.success("Link copied to OBS source!"); }}
+                             className="p-2 rounded-lg bg-orange-600/10 text-orange-500 hover:bg-orange-600 hover:text-white transition-all active:scale-95 border border-orange-500/20"
+                             title="Copy Overlay URL"
+                            >
+                              <Copy size={16} />
+                            </button>
+                            <Link to={`/overlay/${w.id}`} target="_blank" className="p-2 rounded-lg bg-white/5 text-neutral-400 hover:text-white hover:bg-white/10 transition-all border border-white/5">
+                              <ExternalLink size={16} />
+                            </Link>
+                         </div>
+                       </div>
+                       <WidgetCustomizer widget={w} onUpdate={fetchDashboardData} />
                     </div>
-                  </div>
-                  <WidgetCustomizer widget={w} />
-               </div>
-             ))}
+                  ))}
 
              {/* Real Test Trigger */}
              <div className="bg-neutral-900/50 border border-white/10 rounded-[2.5rem] p-8 text-center space-y-6">

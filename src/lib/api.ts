@@ -26,6 +26,7 @@ export const widgetApi = {
   list: () => api.get('/widgets').then(res => res.data),
   create: (data: any) => api.post('/widgets', data).then(res => res.data),
   update: (id: string, config: any) => api.patch(`/widgets/${id}`, { config }).then(res => res.data),
+  delete: (id: string) => api.delete(`/widgets/${id}`).then(res => res.data),
 };
 
 export const donationApi = {
